@@ -1,6 +1,14 @@
 # Changelog
 
-2022-03-21 Dan Untenzu <untenzu@webit.de>
+2025-11-10 Dan Kleine <mail@pixelbrackets.de>
+
+  * 1.4.0
+  * FEATURE Add command to verify project version
+  * FEATURE Add command to link versions
+  * FEATURE Add command to list PHP releases
+  * FEATURE Add command to available and linked versions
+
+  2022-03-21 Dan Untenzu <untenzu@webit.de>
 
   * 1.3.0
   * FEATURE Add command to set version number in file
