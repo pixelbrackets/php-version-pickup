@@ -26,34 +26,32 @@ perfectly well with PHP, but does not want to store files nor support PHP
 versions installed by the OS package manager.
 That's why this script was created.
 
-The file `.php-version` is already used by popular PHP packages like
-[Symfony Server](https://symfony.com/doc/current/setup/symfony_server.html#selecting-a-different-php-version).
+The script is intentionally lightweight and shell-first:
+it makes no global OS changes, doesn’t touch the webserver,
+and doesn’t install PHP automatically. Instead, it links existing binaries.
+It keeps things conservative and CI-friendly with a simple symlink layout,
+clear output, and proper exit codes.
 
-**Key Features**
+## Key Features
 
-- Set a PHP version for a shell session only (forget version in new shells,
-  don't mangle system defaults)
-- [Pass the version to subscripts as well](https://pixelbrackets.de/notes/pass-php-version-to-subscripts-in-cli-calls)
-  (run Composer with the selected version, Composer passes the version to
-  other executed PHP scripts as well)
-- Pick up the version from a `.php-version` file
-- Support PHP versions installed via PPA
-- Written in Bash, to pick versions before running PHP scripts
-- Does not attempt to manage version used by the OS or webserver (Apache, Nginx)
-
-**Current limitations** *✨ Feel free to send a PR to resolve them✨*
-
-- Mayor PHP version numbers only (`7.3`, `7.4`, no `7.3.10`)
-- No `latest` version etc.
-- No installation of missing versions
-- No automatic execution (`cd` hook)
-- No display of locally available versions
-- No display of remote available versions (all PHP version releases)  
+- Set a PHP version for the current shell session only (no system-wide change;
+  forgotten in new shells, system defaults remain untouched)
+- Pick up the PHP version from [nearest `.php-version` file](https://symfony.com/doc/current/setup/symfony_cli.html#selecting-php-version)
+  or persist it via `set`
+- [Pass the version to subscripts](https://pixelbrackets.de/notes/pass-php-version-to-subscripts-in-cli-calls)
+  as well — e.g. run Composer with the selected version,
+  which propagates to executed PHP scripts
+- List configured and in-use PHP versions
+- Show official PHP releases from php.net and compare them to your local linked versions
+- Verify a project’s required PHP version for local checks or CI pipelines
+- Auto-detect installed PHP binaries and create the expected configuration layout interactively
+- Supports PHP versions installed via PPA
+- Written in Bash — no extra runtime, no OS or webserver interference
 
 ## Requirements
 
-- PHP (the script picks up existing PHP versions, it runs without PHP however
-  as it is a shell script)
+- Bash
+- PHP (the script picks up existing PHP versions)
 
 ## Installation
 
@@ -66,29 +64,28 @@ The file `.php-version` is already used by popular PHP packages like
   ```bash
   echo 'source $HOME/.php-version-pickup/bin/php-version-pickup.sh' >> $HOME/.bashrc
   ```
-  *or* add the line manually to your `.bashrc` file
-  ```bash
-  source $HOME/.php-version-pickup/bin/php-version-pickup.sh # or your place of choice
-  ```
-- 🏗️ Install multiple PHP versions (build manually, use the great
-  [PPA by Ondřej Surý](https://launchpad.net/~ondrej/+archive/ubuntu/php),
-  or use a tool like [php-build](https://github.com/php-build/php-build) or
-  [homebrew-php](https://github.com/josegonzalez/homebrew-php))
-- Create symlinks pointing the PHP versions locally available
+- Install multiple PHP versions on your system
+  (the script does not install PHP versions itself; you need to have them available)
+  - 🏗️ Build manually, use the great
+    [PPA by Ondřej Surý](https://launchpad.net/~ondrej/+archive/ubuntu/php),
+    or a tool like [php-build](https://github.com/php-build/php-build) or
+    [homebrew-php](https://github.com/josegonzalez/homebrew-php)
+- Link the installed versions: The script uses symlinks to point to PHP binaries
+  already available on your system, as this depends heavily on how your PHP versions
+  were installed.
 
-  This depends very much on the way you installed the multiple PHP versions.
-  The general structure of each symlink is
-  `$HOME/.php/versions/<version>/bin/php -> <path to desired version binary>`
+  You can set up these symlinks manually **or**, more conveniently,
+  use the `php-version-pickup link` command, which guides you interactively
+  through linking all detected PHP binaries.
+  - **If** you do it manually, then the script expects the following structure
+    for configured versions:
+    `$HOME/.php/versions/<version>/bin/php -> <path to desired version binary>`
 
-  The following example assumes you installed three versions via Ondřejs PPA.
-  *Adapt this to your own setup*.
-  ```bash
-  mkdir -p $HOME/.php/versions/7.3/bin && ln -s /usr/bin/php7.3 $HOME/.php/versions/7.3/bin/php
-  mkdir -p $HOME/.php/versions/7.4/bin && ln -s /usr/bin/php7.4 $HOME/.php/versions/7.4/bin/php
-  mkdir -p $HOME/.php/versions/8.0/bin && ln -s /usr/bin/php8.0 $HOME/.php/versions/8.0/bin/php
-  ```
-- 💡 You may want to add an alias as shortcut command to your `.bashrc` like
-  `alias pvm="php-version-pickup"`
+    Example command to link PHP 8.4 installed via PPA:
+    ```bash
+    mkdir -p $HOME/.php/versions/8.4/bin && ln -s /usr/bin/php8.4 $HOME/.php/versions/8.4/bin/php
+    ```
+- Restart your shell or source your `.bashrc` again
 
 ## Source
 
@@ -96,39 +93,89 @@ https://github.com/webit-de/php-version-pickup/
 
 ## Usage
 
-The script reads the version from a file.
+- **`php-version-pickup set <X.Y>`**
 
-**Create a version file in your project of choice**
+  Stores the given PHP version `<X.Y>` in a `.php-version` file in the current directory.
 
-⚠ Right now only
-[mayor PHP release numbers](https://www.php.net/supported-versions) are allowed,
-which means something like `7.4` or `8.1` (not a specific version like `7.4.10`).
+  ⚠ Only
+  [mayor PHP release numbers](https://www.php.net/supported-versions) are allowed,
+  which means something like `8.1` or `8.4` (not a specific version like `8.1.10`).
 
-Example to set PHP version 7.4 in a project:
+- **`php-version-pickup use`**
+
+  Reads `PHP_VERSION` environment variable or nearest `.php-version` file (traversing up),
+  validates the major.minor format, and prepends the found version link
+  to `PATH` for the current shell session.
+  In short: activates the desired PHP version for the current shell session.
+
+- **`php-version-pickup list`**
+
+  Shows the currently used PHP version, the linked versions and autodetected
+  installed but not linked binaries in common locations.
+  Useful to get a quick system overview.
+
+- **`php-version-pickup link`**
+
+  Interactive wizard which scans common PHP binary paths and offers to create
+  the expected symlink layout under `~/.php/versions/<X.Y>/bin/php`.
+
+- **`php-version-pickup releases`**
+
+  Displays official active releases from PHP.net and compares them
+  to your linked versions.
+
+- **`php-version-pickup check`**
+
+  Verifies if the required version of a project is active in the current shell.
+  Returns exit code `0` if requirements are met, non-zero otherwise.
+
+- **`php-version-pickup --help`**
+
+  Displays a summary of all available commands and their usage.
+
+- **`php-version-pickup --version`**
+
+  Prints the scripts version.
+
+### Examples / Walkthrough
+
+#### Typical project setup
+
 ```bash
-php-version-pickup set 7.4
+php-version-pickup link      # auto-detect & link installed PHP binaries - run once for new versions
+
+cd /path/to/project
+php --version                # shows system default PHP version, e.g. PHP 8.4
+php-version-pickup set 8.3
+php-version-pickup use
+php --version                # shows PHP 8.3 now
 ```
 
-(This is the same as running `echo "7.4" > .php-version` manually).
+#### Show configured vs installed vs official releases
 
-**Pick up the version**
+```bash
+php-version-pickup list
+php-version-pickup releases
+```
 
-Run `php-version-pickup use` in your directory to pick up the version number.
-You should see a message telling you that a file was found and which version
-is used in your shell session from now on.
+#### Verify required PHP version
 
-Run `php --version` to check the version.
+```bash
+php-version-pickup check # returns exit code 0 if active PHP version matches the version set in `.php-version` file
+```
 
-Now you can run PHP scripts, Composer, whatever with the set version.
+### Tips
 
-🥏 Play around with the version file, open and close shells, run some
-PHP scripts and make yourself comfortable with this simple version picker.
-
-**Provide feedback**
-
-This script is a prototype and helped us in a very specific use case. Therefore,
-some limitations exists (see [vision](#vision)). Feel free to send some
-feedback or create a PR to enhance this script.
+- `php-version-pickup list` is the first stop to inspect what is configured
+  and what the system actually provides.
+- Use `php-version-pickup link` when you installed PHP versions via package manager
+  or other tools — it creates the consistent symlink layout the script expects.
+- `php-version-pickup releases` helps identify EOL versions so you can proactively upgrade projects.
+- ᯓ🏃🏻‍♀️‍➡️ The `php-version-pickup …` command may be a bit long to type each time.
+  You may want to add an optional alias as shortcut command to your `.bashrc` like
+  `alias pvm="php-version-pickup"`
+- Play around with the version file, open and close shells, run some
+  PHP scripts and make yourself comfortable with this simple version picker.
 
 ## License
 
@@ -138,8 +185,8 @@ The GNU General Public License can be found at http://www.gnu.org/copyleft/gpl.h
 
 ## Author
 
-Dan Untenzu (<untenzu@webit.de> / [@pixelbrackets](https://github.com/pixelbrackets))
-for webit! Gesellschaft für neue Medien mbH (http://www.webit.de/)
+Dan Kleine ([@pixelbrackets](https://pixelbrackets.de))
+for webit! Gesellschaft für neue Medien mbH (https://www.webit.de/)
 
 ## Changelog
 
