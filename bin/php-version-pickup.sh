@@ -24,6 +24,9 @@ function php-version-pickup {
         elif [[ $1 == "list" ]]; then
             php-version-pickup::command_list; return 0
 
+        elif [[ $1 == "link" ]]; then
+            php-version-pickup::command_link; return 0
+
         elif [[ $1 == "releases" ]]; then
             php-version-pickup::command_releases; return 0
 
@@ -48,6 +51,7 @@ function php-version-pickup {
         echo "php-version-pickup set          Store PHP version number in a file"
         echo "php-version-pickup use          Pick up PHP version from environment variable or file"
         echo "php-version-pickup list         List configured PHP versions"
+        echo "php-version-pickup link         Interactive wizard to link PHP versions"
         echo "php-version-pickup releases     Show PHP release information and EOL status"
         echo "php-version-pickup check        Verify project requirements and PHP version"
         echo "php-version-pickup --help       Show help"
@@ -132,6 +136,120 @@ function php-version-pickup {
 
             echo "├─ $(basename "$PHP_VERSION_PATH_SUBFOLDER") -> $PHP_VERSION_BINARY_SYMLINK_TARGET (Version $PHP_VERSION)"
         done
+    }
+
+    function php-version-pickup::command_link {
+        echo 'PHP Version Link Wizard'
+        echo ''
+
+        # Find installed versions
+        local -a PHP_VERSIONS=()
+        local -a PHP_PATHS=()
+        local INDEX=1
+
+        local SEARCH_PATHS=(
+            "/usr/bin"
+            "/usr/local/bin"
+            "/opt/homebrew/bin"
+            "/opt/php"
+        )
+
+        for SEARCH_PATH in "${SEARCH_PATHS[@]}"; do
+            if [ -d "$SEARCH_PATH" ]; then
+                for PHP_BIN in "$SEARCH_PATH"/php[0-9]* "$SEARCH_PATH"/php; do
+                    if [ -x "$PHP_BIN" ] && [ ! -L "$PHP_BIN" ]; then
+                        local VERSION=$("$PHP_BIN" -r "echo PHP_VERSION;" 2>/dev/null)
+                        local VERSION_SHORT=$("$PHP_BIN" -r "echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;" 2>/dev/null)
+
+                        if [ -n "$VERSION" ]; then
+                            # Check if not already linked
+                            if [ ! -f "/home/$USER/.php/versions/$VERSION_SHORT/bin/php" ]; then
+                                PHP_VERSIONS+=("$VERSION_SHORT")
+                                PHP_PATHS+=("$PHP_BIN")
+                                echo "├─ $INDEX) PHP $VERSION ($PHP_BIN)"
+                                ((INDEX++))
+                            fi
+                        fi
+                    fi
+                done
+            fi
+        done
+
+        if [ "$INDEX" -eq 1 ]; then
+            echo 'No unlinked PHP versions found'
+            return 0
+        fi
+
+        echo "├─ $INDEX) Custom path"
+        echo "├─ 0) Cancel"
+        echo ''
+
+        read -r -p "Which version to link? [0-$INDEX]: " SELECTION
+
+        if [ "$SELECTION" == "0" ]; then
+            echo 'Cancelled'
+            return 0
+        fi
+
+        local SELECTED_VERSION=""
+        local SELECTED_PATH=""
+
+        if [ "$SELECTION" == "$INDEX" ]; then
+            # Custom path
+            read -r -p "Enter path to PHP binary: " SELECTED_PATH
+            if [ ! -x "$SELECTED_PATH" ]; then
+                echo "Error: Not a valid executable: $SELECTED_PATH"
+                return 1
+            fi
+            SELECTED_VERSION=$("$SELECTED_PATH" -r "echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;" 2>/dev/null)
+            if [ -z "$SELECTED_VERSION" ]; then
+                echo 'Error: Could not determine PHP version from binary'
+                return 1
+            fi
+        elif [ "$SELECTION" -ge 1 ] && [ "$SELECTION" -lt "$INDEX" ]; then
+            local ARRAY_INDEX=$((SELECTION - 1))
+            SELECTED_VERSION="${PHP_VERSIONS[$ARRAY_INDEX]}"
+            SELECTED_PATH="${PHP_PATHS[$ARRAY_INDEX]}"
+        else
+            echo 'Invalid selection'
+            return 1
+        fi
+
+        echo ''
+        local VERSION_NAME="$SELECTED_VERSION"
+
+        # Validate version name format
+        if ! [[ "$VERSION_NAME" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            echo 'Error: Invalid version format. Use format: X.Y (e.g., 8.2)'
+            return 1
+        fi
+
+        local TARGET_DIR="/home/$USER/.php/versions/$VERSION_NAME/bin"
+        local TARGET_LINK="$TARGET_DIR/php"
+
+        if [ -e "$TARGET_LINK" ]; then
+            read -r -p "Version $VERSION_NAME already exists. Overwrite? [y/N]: " CONFIRM
+            if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+                echo 'Cancelled'
+                return 0
+            fi
+            rm -f "$TARGET_LINK"
+        fi
+
+        mkdir -p "$TARGET_DIR"
+        ln -s "$SELECTED_PATH" "$TARGET_LINK"
+
+        if [ $? -eq 0 ]; then
+            echo -e "\033[32m✓\033[0m PHP $VERSION_NAME successfully linked"
+
+            local TEST_OUTPUT=$("$TARGET_LINK" --version 2>/dev/null | head -n 1)
+            if [ -n "$TEST_OUTPUT" ]; then
+                echo "Verified: $TEST_OUTPUT"
+            fi
+        else
+            echo 'Error: Failed to create symlink'
+            return 1
+        fi
     }
 
     function php-version-pickup::command_releases {
@@ -222,10 +340,11 @@ function php-version-pickup {
                 echo -e "├─ \033[32m✓\033[0m PHP $PHP_VERSION_PROJECT is currently active"
             else
                 echo -e "├─ \033[33m⚠\033[0m PHP $PHP_VERSION_PROJECT is not active"
-                echo "   Run: php-version-pickup use"
+                echo "│  Run: php-version-pickup use"
             fi
         else
             echo -e "├─ \033[31m✗\033[0m PHP $PHP_VERSION_PROJECT is not linked"
+            echo "│  Run: php-version-pickup link"
 
             # Check if version is installed but not linked
             local SEARCH_PATHS=(
