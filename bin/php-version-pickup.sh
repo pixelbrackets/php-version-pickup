@@ -21,6 +21,9 @@ function php-version-pickup {
         elif [[ $1 == "use" ]]; then
             php-version-pickup::command_use; return 0
 
+        elif [[ $1 == "list" ]]; then
+            php-version-pickup::command_list; return 0
+
         else
             php-version-pickup::command_help; return 0
         fi
@@ -38,6 +41,7 @@ function php-version-pickup {
         echo "Usage:"
         echo "php-version-pickup set          Store version number in a file"
         echo "php-version-pickup use          Pick up version from environment variable or file"
+        echo "php-version-pickup list         List configured PHP versions"
         echo "php-version-pickup --help       Show help"
         echo "php-version-pickup --version    Show version"
     }
@@ -82,6 +86,44 @@ function php-version-pickup {
         export PATH="$PHP_VERSION_BINARY_PATH:$PATH"
 
         echo "Now using PHP version $PHP_VERSION_USE"
+    }
+
+    function php-version-pickup::command_list {
+        local PHP_VERSION_USED=$(php -v 2>/dev/null | grep -oP "^PHP \K[0-9]+\.[0-9]+(\.[0-9]+)?")
+
+         if [ -n "$PHP_VERSION_USED" ]; then
+            echo "Currently using PHP version $PHP_VERSION_USED"
+        else
+            echo 'Error: Unable to detect the currently used PHP version.'
+        fi
+
+        echo 'Detecting configured PHP versions…'
+
+        local PHP_VERSION_PATH="/home/$USER/.php/versions"
+
+        if [ -z "$(ls -A "$PHP_VERSION_PATH")" ]; then
+            echo 'No PHP versions configured yet'
+            return 1
+        fi
+
+        echo '.'
+
+        # Collect subfolders, sorted by number
+        local PHP_VERSION_PATH_SUBFOLDERS
+        mapfile -t PHP_VERSION_PATH_SUBFOLDERS < <(printf "%s\n" "$PHP_VERSION_PATH"/* | sort -V -r)
+
+        for PHP_VERSION_PATH_SUBFOLDER in "${PHP_VERSION_PATH_SUBFOLDERS[@]}"; do
+            local PHP_VERSION_BINARY_PATH="$PHP_VERSION_PATH_SUBFOLDER/bin/php"
+
+            local PHP_VERSION_BINARY_SYMLINK_TARGET=''
+            if [ -L "$PHP_VERSION_BINARY_PATH" ]; then
+                PHP_VERSION_BINARY_SYMLINK_TARGET=$(readlink "$PHP_VERSION_BINARY_PATH")
+            fi
+
+            local PHP_VERSION=$("$PHP_VERSION_BINARY_PATH" -v 2>/dev/null | grep -oP "^PHP \K[0-9]+\.[0-9]+(\.[0-9]+)?")
+
+            echo "├─ $(basename "$PHP_VERSION_PATH_SUBFOLDER") -> $PHP_VERSION_BINARY_SYMLINK_TARGET (Version $PHP_VERSION)"
+        done
     }
 
     # Helper methods
