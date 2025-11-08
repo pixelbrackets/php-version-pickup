@@ -24,6 +24,9 @@ function php-version-pickup {
         elif [[ $1 == "list" ]]; then
             php-version-pickup::command_list; return 0
 
+        elif [[ $1 == "releases" ]]; then
+            php-version-pickup::command_releases; return 0
+
         else
             php-version-pickup::command_help; return 0
         fi
@@ -42,6 +45,7 @@ function php-version-pickup {
         echo "php-version-pickup set          Store version number in a file"
         echo "php-version-pickup use          Pick up version from environment variable or file"
         echo "php-version-pickup list         List configured PHP versions"
+        echo "php-version-pickup releases     Show PHP release information and EOL status"
         echo "php-version-pickup --help       Show help"
         echo "php-version-pickup --version    Show version"
     }
@@ -124,6 +128,74 @@ function php-version-pickup {
 
             echo "├─ $(basename "$PHP_VERSION_PATH_SUBFOLDER") -> $PHP_VERSION_BINARY_SYMLINK_TARGET (Version $PHP_VERSION)"
         done
+    }
+
+    function php-version-pickup::command_releases {
+        echo 'PHP Release Information'
+        echo ''
+        echo 'Fetching data from php.net…'
+        echo ''
+
+        # Fetch release data from php.net
+        local RELEASES_JSON=$(curl -s "https://www.php.net/releases/index.php?json" 2>/dev/null)
+
+        if [ -z "$RELEASES_JSON" ]; then
+            echo 'Error: Failed to fetch release information'
+            return 1
+        fi
+
+        echo 'Active PHP Versions:'
+        echo "$RELEASES_JSON" | grep -oP '"[0-9]+\.[0-9]+"' | sort -u -V -r | while read -r VERSION_QUOTED; do
+            local VERSION=$(echo "$VERSION_QUOTED" | tr -d '"')
+
+            # Get version details from JSON
+            local VERSION_DATA=$(echo "$RELEASES_JSON" | grep -A 10 "\"$VERSION\"")
+
+            if [ -n "$VERSION_DATA" ]; then
+                local ANNOUNCEMENT=$(echo "$VERSION_DATA" | grep -oP '"announcement":.*?"date":"([^"]+)"' | head -1 | grep -oP '[0-9]{2} [A-Z][a-z]+ [0-9]{4}')
+                echo -e "├─ \033[32m●\033[0m PHP $VERSION"
+                if [ -n "$ANNOUNCEMENT" ]; then
+                    echo "│  Latest release: $ANNOUNCEMENT"
+                fi
+            fi
+        done
+
+        echo ''
+        echo 'Your Linked Versions:'
+
+        local PHP_VERSION_PATH="/home/$USER/.php/versions"
+        local FOUND_LINKED=0
+
+        if [ -d "$PHP_VERSION_PATH" ] && [ -n "$(ls -A "$PHP_VERSION_PATH" 2>/dev/null)" ]; then
+            for VERSION_DIR in "$PHP_VERSION_PATH"/*; do
+                if [ -d "$VERSION_DIR" ]; then
+                    local VERSION=$(basename "$VERSION_DIR")
+                    local PHP_BIN="$VERSION_DIR/bin/php"
+
+                    if [ -f "$PHP_BIN" ]; then
+                        local FULL_VERSION=$("$PHP_BIN" -v 2>/dev/null | grep -oP "^PHP \K[0-9]+\.[0-9]+(\.[0-9]+)?")
+
+                        # Check if version is in active list
+                        local IS_ACTIVE=$(echo "$RELEASES_JSON" | grep -c "\"$VERSION\"")
+
+                        if [ "$IS_ACTIVE" -gt 0 ]; then
+                            echo -e "├─ \033[32m✓\033[0m PHP $VERSION ($FULL_VERSION) - Active support"
+                        else
+                            echo -e "├─ \033[33m⚠\033[0m PHP $VERSION ($FULL_VERSION) - End of Life"
+                        fi
+
+                        FOUND_LINKED=1
+                    fi
+                fi
+            done
+        fi
+
+        if [ "$FOUND_LINKED" -eq 0 ]; then
+            echo '├─ No linked versions found'
+        fi
+
+        echo ''
+        echo 'For more details visit: https://www.php.net/supported-versions.php'
     }
 
     # Helper methods
