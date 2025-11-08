@@ -53,7 +53,7 @@ function php-version-pickup {
         echo "php-version-pickup list         List configured PHP versions"
         echo "php-version-pickup link         Interactive wizard to link PHP versions"
         echo "php-version-pickup releases     Show PHP release information and EOL status"
-        echo "php-version-pickup check        Verify project requirements and PHP version"
+        echo "php-version-pickup check        Check if project requirements are met"
         echo "php-version-pickup --help       Show help"
         echo "php-version-pickup --version    Show version"
     }
@@ -67,7 +67,7 @@ function php-version-pickup {
 
         # Store version number in file
         echo $PHP_VERSION_TO_SET > $(pwd)'/.php-version'
-        echo "Set version <$PHP_VERSION_TO_SET> in $(pwd)/.php-version"
+        echo -e "\033[32m✓\033[0m Set version <$PHP_VERSION_TO_SET> in $(pwd)/.php-version"
     }
 
     function php-version-pickup::command_use {
@@ -97,7 +97,7 @@ function php-version-pickup {
         # Populate binary to $PATH
         export PATH="$PHP_VERSION_BINARY_PATH:$PATH"
 
-        echo "Now using PHP version $PHP_VERSION_USE"
+        echo -e "\033[32m✓\033[0m Now using PHP version <$PHP_VERSION_USE>"
     }
 
     function php-version-pickup::command_list {
