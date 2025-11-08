@@ -27,6 +27,9 @@ function php-version-pickup {
         elif [[ $1 == "releases" ]]; then
             php-version-pickup::command_releases; return 0
 
+        elif [[ $1 == "check" ]]; then
+            php-version-pickup::command_check; return 0
+
         else
             php-version-pickup::command_help; return 0
         fi
@@ -42,10 +45,11 @@ function php-version-pickup {
     function php-version-pickup::command_help {
         php-version-pickup::command_version;
         echo "Usage:"
-        echo "php-version-pickup set          Store version number in a file"
-        echo "php-version-pickup use          Pick up version from environment variable or file"
+        echo "php-version-pickup set          Store PHP version number in a file"
+        echo "php-version-pickup use          Pick up PHP version from environment variable or file"
         echo "php-version-pickup list         List configured PHP versions"
         echo "php-version-pickup releases     Show PHP release information and EOL status"
+        echo "php-version-pickup check        Verify project requirements and PHP version"
         echo "php-version-pickup --help       Show help"
         echo "php-version-pickup --version    Show version"
     }
@@ -198,6 +202,52 @@ function php-version-pickup {
         echo 'For more details visit: https://www.php.net/supported-versions.php'
     }
 
+    function php-version-pickup::command_check {
+        local PHP_VERSION_PROJECT=$(php-version-pickup::get_project_version)
+
+        if [ -z "$PHP_VERSION_PROJECT" ]; then
+            echo 'No .php-version file found in current directory'
+            return 1
+        fi
+
+        echo "Project requires PHP version $PHP_VERSION_PROJECT"
+
+        local PHP_VERSION_BINARY_PATH="/home/$USER/.php/versions/$PHP_VERSION_PROJECT/bin/php"
+
+        if [ -f "$PHP_VERSION_BINARY_PATH" ]; then
+            echo -e "├─ \033[32m✓\033[0m PHP $PHP_VERSION_PROJECT is linked and available"
+
+            local PHP_VERSION_USED=$(php -v 2>/dev/null | grep -oP "^PHP \K[0-9]+\.[0-9]+")
+            if [ "$PHP_VERSION_USED" == "$PHP_VERSION_PROJECT" ]; then
+                echo -e "├─ \033[32m✓\033[0m PHP $PHP_VERSION_PROJECT is currently active"
+            else
+                echo -e "├─ \033[33m⚠\033[0m PHP $PHP_VERSION_PROJECT is not active"
+                echo "   Run: php-version-pickup use"
+            fi
+        else
+            echo -e "├─ \033[31m✗\033[0m PHP $PHP_VERSION_PROJECT is not linked"
+
+            # Check if version is installed but not linked
+            local SEARCH_PATHS=(
+                "/usr/bin"
+                "/usr/local/bin"
+                "/opt/homebrew/bin"
+            )
+
+            for SEARCH_PATH in "${SEARCH_PATHS[@]}"; do
+                for PHP_BIN in "$SEARCH_PATH"/php"$PHP_VERSION_PROJECT" "$SEARCH_PATH"/php; do
+                    if [ -x "$PHP_BIN" ]; then
+                        local VERSION=$("$PHP_BIN" -r "echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;" 2>/dev/null)
+                        if [ "$VERSION" == "$PHP_VERSION_PROJECT" ]; then
+                            echo "├─ Found PHP $PHP_VERSION_PROJECT at: $PHP_BIN"
+                            break 2
+                        fi
+                    fi
+                done
+            done
+        fi
+    }
+
     # Helper methods
 
     function php-version-pickup::get_version {
@@ -219,6 +269,13 @@ function php-version-pickup {
         if [[ -n $PHP_VERSION_FROM_FILE ]]; then
             echo "Found $SEARCH_DIRECTORY/.php-version with version <$PHP_VERSION_FROM_FILE>" >&2
             echo "$PHP_VERSION_FROM_FILE" # return version
+        fi
+    }
+
+    function php-version-pickup::get_project_version {
+        # Get version from .php-version in current directory only
+        if [ -f ".php-version" ]; then
+            cat ".php-version" | tr -d '[:space:]'
         fi
     }
 
