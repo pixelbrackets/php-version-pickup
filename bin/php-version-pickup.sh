@@ -102,20 +102,28 @@ function php-version-pickup {
 
     function php-version-pickup::command_list {
         local PHP_VERSION_USED=$(php -v 2>/dev/null | grep -oP "^PHP \K[0-9]+\.[0-9]+(\.[0-9]+)?")
+        local PHP_VERSION_PROJECT=$(php-version-pickup::get_project_version)
 
-         if [ -n "$PHP_VERSION_USED" ]; then
+        if [ -n "$PHP_VERSION_USED" ]; then
             echo "Currently using PHP version $PHP_VERSION_USED"
         else
             echo 'Error: Unable to detect the currently used PHP version.'
+        fi
+
+        if [ -n "$PHP_VERSION_PROJECT" ]; then
+            echo -e "Project requires PHP version \033[36m$PHP_VERSION_PROJECT\033[0m (.php-version file found)"
         fi
 
         echo 'Detecting configured PHP versions…'
 
         local PHP_VERSION_PATH="/home/$USER/.php/versions"
 
-        if [ -z "$(ls -A "$PHP_VERSION_PATH")" ]; then
+        if [ -z "$(ls -A "$PHP_VERSION_PATH" 2>/dev/null)" ]; then
             echo 'No PHP versions configured yet'
-            return 1
+            echo ''
+            echo 'Detecting installed but not linked PHP versions…'
+            php-version-pickup::find_installed_versions
+            return 0
         fi
 
         echo '.'
@@ -133,9 +141,19 @@ function php-version-pickup {
             fi
 
             local PHP_VERSION=$("$PHP_VERSION_BINARY_PATH" -v 2>/dev/null | grep -oP "^PHP \K[0-9]+\.[0-9]+(\.[0-9]+)?")
+            local PHP_VERSION_SHORT=$(echo "$PHP_VERSION" | grep -oP "^[0-9]+\.[0-9]+")
 
-            echo "├─ $(basename "$PHP_VERSION_PATH_SUBFOLDER") -> $PHP_VERSION_BINARY_SYMLINK_TARGET (Version $PHP_VERSION)"
+            local MARKER="├─"
+            if [ "$PHP_VERSION_SHORT" == "$PHP_VERSION_PROJECT" ]; then
+                MARKER="├─ \033[36m★\033[0m"
+            fi
+
+            echo -e "$MARKER $(basename "$PHP_VERSION_PATH_SUBFOLDER") -> $PHP_VERSION_BINARY_SYMLINK_TARGET (Version $PHP_VERSION)"
         done
+
+        echo ''
+        echo 'Detecting installed but not linked PHP versions…'
+        php-version-pickup::find_installed_versions
     }
 
     function php-version-pickup::command_link {
@@ -395,6 +413,40 @@ function php-version-pickup {
         # Get version from .php-version in current directory only
         if [ -f ".php-version" ]; then
             cat ".php-version" | tr -d '[:space:]'
+        fi
+    }
+
+    function php-version-pickup::find_installed_versions {
+        local SEARCH_PATHS=(
+            "/usr/bin"
+            "/usr/local/bin"
+            "/opt/homebrew/bin"
+            "/opt/php"
+        )
+
+        local FOUND_ANY=0
+
+        for SEARCH_PATH in "${SEARCH_PATHS[@]}"; do
+            if [ -d "$SEARCH_PATH" ]; then
+                for PHP_BIN in "$SEARCH_PATH"/php[0-9]* "$SEARCH_PATH"/php; do
+                    if [ -x "$PHP_BIN" ] && [ ! -L "$PHP_BIN" ]; then
+                        local VERSION=$("$PHP_BIN" -r "echo PHP_VERSION;" 2>/dev/null)
+                        local VERSION_SHORT=$("$PHP_BIN" -r "echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;" 2>/dev/null)
+
+                        if [ -n "$VERSION" ]; then
+                            # Check if not already linked
+                            if [ ! -f "/home/$USER/.php/versions/$VERSION_SHORT/bin/php" ]; then
+                                echo "├─ $VERSION_SHORT at $PHP_BIN (not linked)"
+                                FOUND_ANY=1
+                            fi
+                        fi
+                    fi
+                done
+            fi
+        done
+
+        if [ "$FOUND_ANY" -eq 0 ]; then
+            echo 'No unlinked PHP versions found'
         fi
     }
 
